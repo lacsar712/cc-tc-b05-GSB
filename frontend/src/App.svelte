@@ -1,6 +1,9 @@
 <script>
+  import Briefings from "./Briefings.svelte";
+
   let session = null;
   let logs = [];
+  let view = "logs";
   let loginUser = "surveyor";
   let loginPass = "surv123456";
   let chainage = "";
@@ -54,6 +57,7 @@
     if (timer) clearInterval(timer);
     session = null;
     logs = [];
+    view = "logs";
     localStorage.removeItem("tunnel_session");
   }
 
@@ -117,6 +121,15 @@
     background: #d97706; color: #fff; font-weight: 600;
   }
   button.secondary { background: #57534e; }
+  .topbar {
+    display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+    background: #292524; border: 1px solid #44403c; border-radius: 8px;
+    padding: 0.6rem 1rem; margin-bottom: 1rem;
+  }
+  .topbar nav { display: flex; gap: 0.5rem; }
+  .topbar .who { color: #a8a29e; font-size: 0.85rem; margin-left: auto; }
+  button.nav { background: transparent; color: #d6d3d1; border: 1px solid #57534e; }
+  button.nav.active { background: #d97706; border-color: #d97706; color: #fff; }
   .err { color: #fb7185; }
   table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
   th, td { text-align: left; padding: 0.45rem; border-bottom: 1px solid #44403c; }
@@ -139,9 +152,18 @@
       {#if error}<p class="err">{error}</p>{/if}
     </section>
   {:else}
-    <p class="sub">已登录：{session.username}（{isWriter ? "可提交" : "只读"}）</p>
-    <section>
+    <header class="topbar">
+      <nav>
+        <button class="nav" class:active={view === "logs"} on:click={() => (view = "logs")}>测缝记录</button>
+        <button class="nav" class:active={view === "briefing"} on:click={() => (view = "briefing")}>交班签出</button>
+      </nav>
+      <span class="who">已登录：{session.username}（{isWriter ? "可提交" : "只读"}）</span>
       <button class="secondary" on:click={logout}>退出</button>
+    </header>
+    {#if view === "briefing"}
+      <Briefings {session} {isWriter} />
+    {:else}
+    <section>
       <button class="secondary" disabled={loading} on:click={refresh}>刷新列表</button>
     </section>
     {#if isWriter}
@@ -177,5 +199,6 @@
         </tbody>
       </table>
     </section>
+    {/if}
   {/if}
 </main>

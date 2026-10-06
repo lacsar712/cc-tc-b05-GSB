@@ -6,8 +6,17 @@ from flask import Flask, g, jsonify, request
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
+from briefing import freeze_briefing
 from claimer import start as start_claimer
-from models import Base, ConvergenceLog, SessionLocal, engine, row_dict
+from models import (
+    Base,
+    ConvergenceLog,
+    SessionLocal,
+    ShiftBriefing,
+    briefing_dict,
+    engine,
+    row_dict,
+)
 
 SECRET = os.environ.get("JWT_SECRET", "tunnelconv-dev-secret")
 pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -78,18 +87,21 @@ def require_login(fn):
     return wrapper
 
 
-def require_writer(fn):
-    @wraps(fn)
-    def wrapper(*args, **kwargs):
-        user = current_user()
-        if user is None:
-            return jsonify({"detail": "未登录"}), 401
-        if user["role"] != "writer":
-            return jsonify({"detail": "仅测量员可提交收敛读数"}), 403
-        g.user = user
-        return fn(*args, **kwargs)
+def require_writer(fn=None, *, message="仅测量员可提交收敛读数"):
+    def deco(f):
+        @wraps(f)
+        def wrapper(*args, **kwargs):
+            user = current_user()
+            if user is None:
+                return jsonify({"detail": "未登录"}), 401
+            if user["role"] != "writer":
+                return jsonify({"detail": message}), 403
+            g.user = user
+            return f(*args, **kwargs)
 
-    return wrapper
+        return wrapper
+
+    return deco(fn) if fn is not None else deco
 
 
 @app.get("/api/health")
@@ -147,5 +159,41 @@ def create_log():
         db.commit()
         db.refresh(row)
         return jsonify(row_dict(row)), 201
+    finally:
+        db.close()
+
+
+@app.post("/api/briefings")
+@require_writer(message="仅测量员可生成交班简报，巡检员只读")
+def create_briefing():
+    """生成交班签出简报：统计与正文在服务端冻结入库，不接受客户端正文。"""
+    db = SessionLocal()
+    try:
+        row = freeze_briefing(db, g.user["username"])
+        return jsonify(briefing_dict(row)), 201
+    finally:
+        db.close()
+
+
+@app.get("/api/briefings")
+@require_login
+def list_briefings():
+    db = SessionLocal()
+    try:
+        rows = db.query(ShiftBriefing).order_by(ShiftBriefing.id.desc()).all()
+        return jsonify([briefing_dict(r, with_body=False) for r in rows])
+    finally:
+        db.close()
+
+
+@app.get("/api/briefings/<int:briefing_id>")
+@require_login
+def get_briefing(briefing_id: int):
+    db = SessionLocal()
+    try:
+        row = db.get(ShiftBriefing, briefing_id)
+        if row is None:
+            return jsonify({"detail": "简报不存在"}), 404
+        return jsonify(briefing_dict(row))
     finally:
         db.close()
